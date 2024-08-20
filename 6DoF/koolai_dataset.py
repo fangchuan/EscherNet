@@ -83,12 +83,6 @@ class KoolAIDataLoader():
         sampler = DistributedSampler(dataset)
         return wds.WebLoader(dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
 
-def get_pose(transformation):
-    # transformation: 4x4
-    return transformation
-
-
-
 
 class BaseDataset(torch.utils.data.Dataset, ABC):
     def __init__(self, root_dir: str, split_filepath: str):
@@ -306,7 +300,7 @@ class KoolAIPanoData(BaseDataset):
             index_inputs = sample_views[:self.T_in]
             index_targets = sample_views[self.T_in:]
         
-        ic(uid, sample_views)
+        # ic(uid, sample_views)
         
         # c2w poses, rgbs, background colors
         poses, rgbs = [], []

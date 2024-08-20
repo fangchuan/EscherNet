@@ -8,6 +8,7 @@ import torch
 from packaging import version
 from transformers import CLIPFeatureExtractor, CLIPVisionModelWithProjection, ConvNextV2Model, AutoImageProcessor
 from CN_encoder import CN_encoder
+from models.dinov2 import DinoV2
 # todo import convnext
 from torchvision import transforms
 
@@ -130,7 +131,7 @@ class Zero1to3StableDiffusionPipeline(DiffusionPipeline):
     def __init__(
         self,
         vae: AutoencoderKL,
-        image_encoder: CN_encoder,
+        image_encoder: Union[CN_encoder, DinoV2],
         unet: UNet2DConditionModel,
         scheduler: KarrasDiffusionSchedulers,
         safety_checker: StableDiffusionSafetyChecker,
@@ -220,7 +221,6 @@ class Zero1to3StableDiffusionPipeline(DiffusionPipeline):
         # self.model_mode = None
         self.ConvNextV2_preprocess = transforms.Compose([
             transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.BICUBIC),
-            # transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
 
@@ -529,7 +529,8 @@ class Zero1to3StableDiffusionPipeline(DiffusionPipeline):
         # todo
         # [-1, 1] -> [0, 1]
         image = (image + 1.) / 2.
-        image = self.ConvNextV2_preprocess(image)
+        if isinstance(self.image_encoder, CN_encoder):
+            image = self.ConvNextV2_preprocess(image)
         print(f'image shape: {image.shape}')
         image_embeddings = self.image_encoder(image)#.last_hidden_state  # bt, 768, 12, 12
         print(f'image_embeddings from ConvNextV2 : {image_embeddings.shape}')
@@ -837,7 +838,6 @@ class Zero1to3StableDiffusionPipeline(DiffusionPipeline):
         width = width or self.unet.config.sample_size * self.vae_scale_factor
         assert T_out == poses[0][0].shape[1]
         # 1. Check inputs. Raise error if not correct
-        # input_image = hint_imgs
         self.check_inputs(input_imgs, height, width, callback_steps)
         # # todo hard code
         # self.proj3d = Proj3DVolume(volume_dims=[], feature_dims=[], T_in=1, T_out=1, bound=1.0)  # todo T_in=1

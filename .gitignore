@@ -148,3 +148,6 @@ wandb
 
 # pretrained models
 pretrained
+
+# data
+demo
