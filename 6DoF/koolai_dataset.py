@@ -61,7 +61,7 @@ class KoolAIDataLoader():
             else {'train': 'train.json', 'val': 'val.json'}
         self.split_filepath = split_files[split]
 
-        image_transforms = [torchvision.transforms.Resize((image_height, image_width)),
+        image_transforms = [torchvision.transforms.Resize((image_height, image_width), antialias=True),
                             transforms.ToTensor(),
                             transforms.Normalize([0.5], [0.5])]
         self.image_transforms = torchvision.transforms.Compose(image_transforms)
@@ -133,7 +133,7 @@ class BaseDataset(torch.utils.data.Dataset, ABC):
     @staticmethod
     def _load_depth_image(file_path, scale: float = 4000.0):
         ''' Load depth image '''
-        depth = np.array(Image.open(file_path))
+        depth = np.array(Image.open(file_path)).astype(np.int32)
         depth = torch.from_numpy(depth).float() / scale
         depth = depth.unsqueeze(-1).permute(2, 0, 1).unsqueeze(0)
         return depth
@@ -218,10 +218,6 @@ class KoolAIPanoData(BaseDataset):
         self.num_all_rooms = len(self.room_ids)
         self.num_all_views = num_cams
         ic(self.num_all_rooms, self.num_all_views)
-        # downscale = 512 / 256.
-        # self.fx = 560. / downscale
-        # self.fy = 560. / downscale
-        # self.intrinsic = torch.tensor([[self.fx, 0, 128., 0, self.fy, 128., 0, 0, 1.]], dtype=torch.float64).view(3, 3)
 
 
     @staticmethod
@@ -319,8 +315,10 @@ class KoolAIPanoData(BaseDataset):
             R_c2w = trimesh.transformations.quaternion_matrix(q_c2w)[:3, :3]
             pose[:3, :3] = torch.from_numpy(R_c2w)
             
+            # scale rgb to [-1, 1]
+            normalized_rgb = rgb * 2.0 - 1.0
             poses.append(pose)
-            rgbs.append(rgb)
+            rgbs.append(normalized_rgb)
             depths.append(depth)
             
         poses: Float[Tensor, "N 4 4"] = torch.stack(poses, dim=0)
@@ -330,20 +328,20 @@ class KoolAIPanoData(BaseDataset):
         # scale depth according to scale
         depths = depths * scale
         
-        # adjust image resolution
-        input_images: Float[Tensor, "N H W 3"] = rgbs[:self.T_in].permute(0, 2, 3, 1)
+        # source views
+        input_images: Float[Tensor, "N 3 H W"] = rgbs[:self.T_in]
         input_images = torch.clamp(input_images, 0, 1)
 
-        # adjust render image resolution and sample intended rendering region
-        target_images: Float[Tensor, "N H W 3"] = rgbs[self.T_in:].permute(0, 2, 3, 1)
+        # atarget views
+        target_images: Float[Tensor, "N 3 H W"] = rgbs[self.T_in:]
         target_images = torch.clamp(target_images, 0, 1)
         
-        all_depths: Float[Tensor, "N H W 1"] = depths.permute(0, 2, 3, 1)
-        input_depths: Float[Tensor, "N H W 1"] = all_depths[:self.T_in]
-        target_depths: Float[Tensor, "N H W 1"] = all_depths[self.T_in:]
+        all_depths: Float[Tensor, "N 1 H W"] = depths
+        input_depths: Float[Tensor, "N 1 H W"] = all_depths[:self.T_in]
+        target_depths: Float[Tensor, "N 1 H W"] = all_depths[self.T_in:]
         
-        cond_Ts = poses[:self.T_in]
-        target_Ts = poses[self.T_in:]
+        cond_Ts: Float[Tensor, "N 4 4"] = poses[:self.T_in]
+        target_Ts: Float[Tensor, "N 4 4"] = poses[self.T_in:]
         
         data = {}
         data['image_input'] = input_images

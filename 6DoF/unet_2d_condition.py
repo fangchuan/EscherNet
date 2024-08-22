@@ -746,6 +746,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                 If `return_dict` is True, an [`~models.unet_2d_condition.UNet2DConditionOutput`] is returned, otherwise
                 a `tuple` is returned where the first element is the sample tensor.
         """
+        logger.info(f"sample shape: {sample.shape}")
         # By default samples have to be AT least a multiple of the overall upsampling factor.
         # The overall upsampling factor is equal to 2 ** (# num of upsampling layers).
         # However, the upsampling interpolation output size can be forced to fit any upsampling size
@@ -928,9 +929,10 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                 )
             else:
                 sample, res_samples = downsample_block(hidden_states=sample, temb=emb)
-                logger.info(f'downsample_block output shape: {sample.shape}')
             # default
             down_block_res_samples += res_samples
+            logger.info(f'downsample_block output shape: {sample.shape}')
+            
 
         if down_block_additional_residuals is not None:
             new_down_block_res_samples = ()
@@ -987,7 +989,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                 sample = upsample_block(
                     hidden_states=sample, temb=emb, res_hidden_states_tuple=res_samples, upsample_size=upsample_size
                 )
-            logger.info(f'upsample_block res_samples shape: {res_samples.shape}')
+            logger.info(f'len res_samples: {len(res_samples)}, res_samples[0].shape: {res_samples[0].shape}')
             logger.info(f'upsample_block output shape: {sample.shape}')
 
         # 6. post-process

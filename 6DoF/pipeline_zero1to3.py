@@ -220,7 +220,7 @@ class Zero1to3StableDiffusionPipeline(DiffusionPipeline):
         self.register_to_config(requires_safety_checker=requires_safety_checker)
         # self.model_mode = None
         self.ConvNextV2_preprocess = transforms.Compose([
-            transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.BICUBIC),
+            transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
 

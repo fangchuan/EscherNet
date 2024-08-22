@@ -73,10 +73,6 @@ def main(args):
     
     test_image_filepath = '/mnt/nas_3dv/hdd1/datasets/KoolAI/processed_data_20240413/3FO4K5G405RH/panorama/room_638/rgb/20.png'
     to_tensor_fn = transforms.ToTensor()
-    # new_h = int(np.ceil(512/dino_stride) * dino_stride)
-    # new_w = int(np.ceil(1024/dino_stride) * dino_stride)
-    # print(new_h, new_w)
-    # resize_tensor_fn = transforms.Resize((new_h, new_w))
     normalize_fn = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     rgb = np.array(Image.open(test_image_filepath).convert("RGB"))

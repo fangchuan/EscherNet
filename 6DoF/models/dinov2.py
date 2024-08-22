@@ -47,7 +47,7 @@ class DinoV2(nn.Module):
         new_height = int(math.ceil(image_height / self.cfg.stride) * self.cfg.stride)
         new_width = int(math.ceil(image_width / self.cfg.stride) * self.cfg.stride)
         self.image_preprocess = transforms.Compose([
-                                transforms.Resize((new_height, new_width), interpolation=transforms.InterpolationMode.BICUBIC),
+                                transforms.Resize((new_height, new_width), interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
                                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
         
     def __init__(self) -> None:

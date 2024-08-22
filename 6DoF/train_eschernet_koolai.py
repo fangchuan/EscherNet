@@ -37,6 +37,8 @@ from packaging import version
 from PIL import Image
 from torchvision import transforms
 from tqdm.auto import tqdm
+from icecream import ic
+
 from CN_encoder import CN_encoder
 from models.dinov2 import DinoV2
 
@@ -504,14 +506,21 @@ def parse_args(input_args=None):
 
     return args
 
+ConvNextV2_preprocess = transforms.Compose([
+    transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
+    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+])
 def _encode_image(feature_extractor: torch.nn.Module,
-                  image_encoder: torch.nn.Module, 
+                  image_encoder: Union[CN_encoder, DinoV2], 
                   image: Float[Tensor, "BNt H W C"], 
                   do_classifier_free_guidance: bool) -> Float[Tensor, "B N C"]:
     # [-1, 1] -> [0, 1]
     image = (image + 1.) / 2.
+    if isinstance(image_encoder, CN_encoder):
+        image = ConvNextV2_preprocess(image)  
     image_embeddings = image_encoder(image)   # bt, 768, 37, 74
-    image_embeddings = einops.rearrange(image_embeddings, 'bt c h w -> bt (h w) c')
+    if isinstance(image_encoder, DinoV2):
+        image_embeddings = einops.rearrange(image_embeddings, 'bt c h w -> bt (h w) c')
     if do_classifier_free_guidance:
         negative_prompt_embeds = torch.zeros_like(image_embeddings)
         image_embeddings = torch.cat([negative_prompt_embeds, image_embeddings])
@@ -521,6 +530,9 @@ def _encode_image(feature_extractor: torch.nn.Module,
 def main(args):
     logging_dir = Path(args.output_dir, args.logging_dir)
 
+    import warnings
+    warnings.filterwarnings('ignore', category=UserWarning, message='TypedStorage is deprecated')
+    
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
 
     accelerator = Accelerator(
@@ -561,7 +573,8 @@ def main(args):
 
     # Load scheduler and models
     noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler", revision=args.revision)
-    image_encoder = DinoV2()
+    image_encoder = CN_encoder.from_pretrained("facebook/convnextv2-tiny-22k-224")
+    # image_encoder = DinoV2()
     
     feature_extractor = None
     vae = AutoencoderKL.from_pretrained(args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision)
@@ -825,8 +838,10 @@ def main(args):
             with accelerator.accumulate(unet, image_encoder):
                 gt_image = batch["image_target"].to(dtype=weight_dtype) # BxTx3xHxW
                 gt_image = einops.rearrange(gt_image, 'b t c h w -> (b t) c h w', t=T_out)
+                ic(gt_image.shape)
                 input_image = batch["image_input"].to(dtype=weight_dtype)    # Bx3xHxW
                 input_image = einops.rearrange(input_image, 'b t c h w -> (b t) c h w', t=T_in)
+                ic(input_image.shape)
                 pose_in = batch["pose_in"].to(dtype=weight_dtype)  # BxTx4
                 pose_out = batch["pose_out"].to(dtype=weight_dtype)  # BxTx4
                 pose_in_inv = batch["pose_in_inv"].to(dtype=weight_dtype)  # BxTx4
