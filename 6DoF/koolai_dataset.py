@@ -342,8 +342,9 @@ class KoolAIPanoData(BaseDataset):
         
         cond_Ts: Float[Tensor, "N 4 4"] = poses[:self.T_in]
         target_Ts: Float[Tensor, "N 4 4"] = poses[self.T_in:]
-        
+                
         data = {}
+        data['room_uid'] = uid
         data['image_input'] = input_images
         data['image_target'] = target_images
         data['depth_input'] = input_depths
@@ -355,6 +356,41 @@ class KoolAIPanoData(BaseDataset):
         
         return data
         
+    def compute_room_scale(self, idx:int) -> float:
+        """ traverse all depth images and compute the scale of the room
+
+        Args:
+            room_id (int): room id
+
+        Returns:
+            float: largest depth value
+        """
+        uid = self.room_ids[idx]        
+        depth_dir = os.path.join(self.root_dir, uid, 'depth')
+        
+        depth_image_files = [f for f in os.listdir(depth_dir) if f.endswith('.png')]
+        depth_image_files.sort(key=lambda x: int(x.split('.')[0]))
+        
+        max_depth = 0
+        for f in depth_image_files:
+            depth_path = osp.join(depth_dir, f)
+            depth = self._load_depth_image(depth_path, scale=4000.0)
+            max_depth = max(max_depth, torch.max(depth).item())
+        
+        return max_depth * 1.05
+    
+    def compute_all_room_scale(self) -> List[float]:
+        scales = []
+        for idx in range(len(self.room_ids)):
+            room_uid = self.room_ids[idx]
+            scale = self.compute_room_scale(idx)
+            ic(room_uid, scale)
+            scales.append(scale)
+        
+        # max_scale = max(scales)
+        max_scale = np.quantile(np.array(scales), 0.95)
+        return 1./max_scale
+    
     def collate(self, batch):
         batch = torch.utils.data.default_collate(batch)
         batch.update({"height": self.image_height, "width": self.image_width})

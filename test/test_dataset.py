@@ -47,13 +47,6 @@ def main(args):
     device = get_device()
     
     # Init Dataset
-    image_transforms = torchvision.transforms.Compose(
-        [
-            torchvision.transforms.Resize((512, 1024)),  # 256, 256
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize([0.5], [0.5])
-        ]
-    )
     T_in = 3
     T_out = 3
     T_in_val = 1

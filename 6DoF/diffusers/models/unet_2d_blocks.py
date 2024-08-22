@@ -960,7 +960,10 @@ class CrossAttnDownBlock2D(nn.Module):
         posemb: Optional = None,
     ):
         output_states = ()
-
+        logger.info(f"hidden_states.shape: {hidden_states.shape}")
+        logger.info(f"temb.shape: {temb.shape}")
+        logger.info(f"encoder_hidden_states.shape: {encoder_hidden_states.shape}")
+        logger.info(f"posemb.shape: {posemb.shape}")
         for resnet, attn in zip(self.resnets, self.attentions):
             if self.training and self.gradient_checkpointing:
 
@@ -980,6 +983,8 @@ class CrossAttnDownBlock2D(nn.Module):
                     temb,
                     **ckpt_kwargs,
                 )
+                logger.info(f"after restnet hidden_states.shape: {hidden_states.shape}")
+                
                 hidden_states = torch.utils.checkpoint.checkpoint(
                     create_custom_forward(attn, return_dict=False), # transformer_2d
                     hidden_states,
@@ -992,6 +997,7 @@ class CrossAttnDownBlock2D(nn.Module):
                     encoder_attention_mask,
                     **ckpt_kwargs,
                 )[0]
+                logger.info(f"after attn hidden_states.shape: {hidden_states.shape}")
             else:
                 hidden_states = resnet(hidden_states, temb)
                 hidden_states = attn(
@@ -1009,6 +1015,7 @@ class CrossAttnDownBlock2D(nn.Module):
         if self.downsamplers is not None:
             for downsampler in self.downsamplers:
                 hidden_states = downsampler(hidden_states)
+                logger.info(f"after downsampler hidden_states.shape: {hidden_states.shape}")
 
             output_states = output_states + (hidden_states,)
 
