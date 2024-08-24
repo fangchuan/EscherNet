@@ -20,7 +20,6 @@ sys.path.append("../")
 import json
 from abc import ABC, abstractmethod
 import os.path as osp
-# from megfile import smart_open, smart_path_join, smart_exists
 
 import numpy as np
 import torch
@@ -207,9 +206,9 @@ class KoolAIPanoData(BaseDataset):
         num_rooms = len(self.room_ids)
      
         if validation:
-            self.room_ids = self.room_ids[math.floor(num_rooms / 100. * 99.):]  # used last 1% as validation
+            self.room_ids = self.room_ids[math.floor(num_rooms / 1000. * 999.):]  # used last 0.1% as validation
         else:
-            self.room_ids = self.room_ids[:math.floor(num_rooms / 100. * 99.)]  # used first 99% as training
+            self.room_ids = self.room_ids[:math.floor(num_rooms / 1000. * 999.)]  # used first 99.9% as training
         print('============= length of dataset %d =============' % len(self.room_ids))
         
         room_folders = [osp.join(root_dir, f) for f in self.room_ids if os.path.isdir(osp.join(root_dir, f))]
@@ -273,7 +272,7 @@ class KoolAIPanoData(BaseDataset):
         
         # load camera poses
         cameras_meta = self._load_camera_meta(room_meta_filepath)
-        scale_mat, scale = self._load_scale_mat(room_meta_filepath)
+        scale_mat, original_scale = self._load_scale_mat(room_meta_filepath)
         # sample views (incl. source view and side views)
         len_views = len([img for img in os.listdir(rgb_dir) if img.endswith('.png')])
         if len_views < self.total_view:
@@ -301,12 +300,19 @@ class KoolAIPanoData(BaseDataset):
         # c2w poses, rgbs, background colors
         poses, rgbs = [], []
         depths = []
+        new_scene_scale = 1.0 / 10.16777
+        
         for view in sample_views:
             rgb_path = osp.join(rgb_dir, f'{view}.png')
             depth_path = osp.join(depth_dir, f'{view}.png')
             pose = self._load_camera_pose(cameras_meta, view)
             rgb = self._load_rgb_image(rgb_path)
             depth = self._load_depth_image(depth_path, scale=4000.0)
+            # new scale_mat
+            cam_center = scale_mat[:3, 3] / original_scale
+            new_scale_mat = torch.eye(4).float()
+            new_scale_mat[:3, 3] = cam_center
+            new_scale_mat[:3] *= new_scene_scale
             # scale pose_c2w
             pose = scale_mat @ pose
             R_c2w = (pose[:3, :3]).numpy()
@@ -326,7 +332,7 @@ class KoolAIPanoData(BaseDataset):
         depths: Float[Tensor, "N 1 H W"] = torch.cat(depths, dim=0)
         
         # scale depth according to scale
-        depths = depths * scale
+        depths = depths * new_scene_scale
         
         # source views
         input_images: Float[Tensor, "N 3 H W"] = rgbs[:self.T_in]

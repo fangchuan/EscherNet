@@ -1053,17 +1053,17 @@ class XFormersAttnProcessor:
 
         key = attn.to_k(encoder_hidden_states)
         value = attn.to_v(encoder_hidden_states)
-        logger.info(f"query shape: {query.shape}, key shape: {key.shape}, value shape: {value.shape}")
+        logger.debug(f"query shape: {query.shape}, key shape: {key.shape}, value shape: {value.shape}")
 
         # apply 6DoF, todo now only for xformer processor
         if posemb is not None:
             p_out_inv = einops.repeat(p_out_inv, 'b t_out f g -> b (t_out l) f g', l=query.shape[1] // t_out)  # query shape
-            logger.info(f"p_out_inv shape: {p_out_inv.shape}")
+            logger.debug(f"p_out_inv shape: {p_out_inv.shape}")
             if self_attn:
                 p_in = einops.repeat(p_out, 'b t_out f g -> b (t_out l) f g', l=query.shape[1] // t_out)  # query shape
             else:
                 p_in = einops.repeat(p_in, 'b t_in f g -> b (t_in l) f g', l=key.shape[1] // t_in)  # key shape
-            logger.info(f"p_in shape: {p_in.shape}")
+            logger.debug(f"p_in shape: {p_in.shape}")
             query = cape_embed(query, p_out_inv)  # query f_q @ (p_out)^(-T) .permute(0, 1, 3, 2)
             key = cape_embed(key, p_in)  # key f_k @ p_in
 
@@ -1071,7 +1071,7 @@ class XFormersAttnProcessor:
         query = attn.head_to_batch_dim(query).contiguous()
         key = attn.head_to_batch_dim(key).contiguous()
         value = attn.head_to_batch_dim(value).contiguous()
-        logger.info(f"reshaped query shape: {query.shape}, key shape: {key.shape}, value shape: {value.shape}")
+        logger.debug(f"reshaped query shape: {query.shape}, key shape: {key.shape}, value shape: {value.shape}")
         # self-ttn (bm) l c  x  (bm) l c -> (bm) l c
         # cross-ttn (bm) l c  x  b (nl) c -> (bm) l c
         # reuse 2d attention for multiview attention
@@ -1080,7 +1080,7 @@ class XFormersAttnProcessor:
         hidden_states = xformers.ops.memory_efficient_attention(    # query: (bm) l c -> b (ml) c;  key: b (nl) c
             query, key, value, attn_bias=attention_mask, op=self.attention_op, scale=attn.scale
         )
-        logger.info(f"attented hidden_states shape: {hidden_states.shape}")
+        logger.debug(f"attented hidden_states shape: {hidden_states.shape}")
         hidden_states = hidden_states.to(query.dtype)
         hidden_states = attn.batch_to_head_dim(hidden_states)
 

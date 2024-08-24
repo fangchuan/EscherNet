@@ -58,14 +58,13 @@ from diffusers.training_utils import EMAModel
 import torchvision
 import itertools
 
-from DenoisingViT.DenoisingViT.vit_wrapper import ViTWrapper
 from utils.typing import *
 
 # metrics
 import cv2
 from skimage.metrics import structural_similarity as calculate_ssim
 import lpips
-LPIPS = lpips.LPIPS(net='alex', version='0.1')
+
 
 if is_wandb_available():
     import wandb
@@ -87,7 +86,16 @@ def image_grid(imgs, rows, cols):
     return grid
 
 @torch.no_grad()
-def log_validation(validation_dataloader, vae, image_encoder, feature_extractor, unet, args, accelerator, weight_dtype, split="val"):
+def log_validation(validation_dataloader, 
+                   vae, 
+                   image_encoder, 
+                   feature_extractor, 
+                   unet, 
+                   args, 
+                   accelerator, 
+                   weight_dtype, 
+                   split="val",
+                   LPIPS=None):
     logger.info("Running {} validation... ".format(split))
 
     scheduler = DDIMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
@@ -487,6 +495,20 @@ def parse_args(input_args=None):
             " more information see https://huggingface.co/docs/accelerate/v0.17.0/en/package_reference/accelerator#accelerate.Accelerator"
         ),
     )
+    parser.add_argument(
+        "--convnext_pretrained_model_path",
+        type=str,
+        default="facebook/convnextv2-tiny-22k-224",
+        required=True,
+        help="Path to pretrained model or model identifier from huggingface.co/models.",
+    )
+    parser.add_argument(
+        '--alexnet_pretrained_model_path',
+        type=str,
+        default='',
+        required=True,
+        help="Path to pretrained model or model identifier from huggingface.co/models.",
+    )
 
     if input_args is not None:
         args = parser.parse_args(input_args)
@@ -516,8 +538,8 @@ def _encode_image(feature_extractor: torch.nn.Module,
                   do_classifier_free_guidance: bool) -> Float[Tensor, "B N C"]:
     # [-1, 1] -> [0, 1]
     image = (image + 1.) / 2.
-    if isinstance(image_encoder, CN_encoder):
-        image = ConvNextV2_preprocess(image)  
+    # if isinstance(image_encoder, CN_encoder):
+    image = ConvNextV2_preprocess(image)  
     image_embeddings = image_encoder(image)   # bt, 768, 37, 74
     if isinstance(image_encoder, DinoV2):
         image_embeddings = einops.rearrange(image_embeddings, 'bt c h w -> bt (h w) c')
@@ -573,7 +595,7 @@ def main(args):
 
     # Load scheduler and models
     noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler", revision=args.revision)
-    image_encoder = CN_encoder.from_pretrained("facebook/convnextv2-tiny-22k-224")
+    image_encoder = CN_encoder.from_pretrained(args.convnext_pretrained_model_path)
     # image_encoder = DinoV2()
     
     feature_extractor = None
@@ -672,6 +694,9 @@ def main(args):
     print_model_info(vae)
     print_model_info(image_encoder)
 
+    LPIPS = lpips.LPIPS(net='alex', version='0.1', 
+                        pnet_rand=True,
+                        model_path=args.alexnet_pretrained_model_path)
     # Init Dataset
     img_height, img_width = args.resolution
     total_sample_views = 10
@@ -684,15 +709,15 @@ def main(args):
                                     T_in=T_in,
                                     T_out=T_out,
                                     fix_sample=False,)
-    train_log_dataset = KoolAIPanoData(root_dir=args.train_data_dir, 
-                                        split_filepath=args.train_split_file,
-                                        image_height=img_height, 
-                                        image_width=img_width,
-                                        total_view= total_sample_views,
-                                        validation=False, 
-                                        T_in=T_in_val, 
-                                        T_out=T_out, 
-                                        fix_sample=True)
+    # train_log_dataset = KoolAIPanoData(root_dir=args.train_data_dir, 
+    #                                     split_filepath=args.train_split_file,
+    #                                     image_height=img_height, 
+    #                                     image_width=img_width,
+    #                                     total_view= total_sample_views,
+    #                                     validation=False, 
+    #                                     T_in=T_in_val, 
+    #                                     T_out=T_out, 
+    #                                     fix_sample=True)
     validation_dataset = KoolAIPanoData(root_dir=args.train_data_dir, 
                                         split_filepath=args.train_split_file,
                                         image_height=img_height, 
@@ -718,14 +743,15 @@ def main(args):
         num_workers=1,
         collate_fn=validation_dataset.collate,
     )
-    # for training set logs
-    train_log_dataloader = torch.utils.data.DataLoader(
-        train_log_dataset,
-        shuffle=False,
-        batch_size=1,
-        num_workers=1,
-        collate_fn=train_log_dataset.collate,
-    )
+    # # for training set logs
+    # train_log_dataloader = torch.utils.data.DataLoader(
+    #     train_log_dataset,
+    #     shuffle=False,
+    #     batch_size=1,
+    #     num_workers=1,
+    #     collate_fn=train_log_dataset.collate,
+    # )
+    train_log_dataloader = None
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
@@ -838,10 +864,8 @@ def main(args):
             with accelerator.accumulate(unet, image_encoder):
                 gt_image = batch["image_target"].to(dtype=weight_dtype) # BxTx3xHxW
                 gt_image = einops.rearrange(gt_image, 'b t c h w -> (b t) c h w', t=T_out)
-                ic(gt_image.shape)
                 input_image = batch["image_input"].to(dtype=weight_dtype)    # Bx3xHxW
                 input_image = einops.rearrange(input_image, 'b t c h w -> (b t) c h w', t=T_in)
-                ic(input_image.shape)
                 pose_in = batch["pose_in"].to(dtype=weight_dtype)  # BxTx4
                 pose_out = batch["pose_out"].to(dtype=weight_dtype)  # BxTx4
                 pose_in_inv = batch["pose_in_inv"].to(dtype=weight_dtype)  # BxTx4
@@ -1006,7 +1030,7 @@ def main(args):
                             # Switch back to the original UNet parameters.
                             ema_unet.restore(unet.parameters())
 
-                    if validation_dataloader is not None and global_step % args.validation_steps == 0:
+                    if validation_dataloader is not None and (global_step % args.validation_steps == 0 or global_step == 1):
                         if args.use_ema:
                             # Store the UNet parameters temporarily and load the EMA parameters to perform inference.
                             ema_unet.store(unet.parameters())
@@ -1021,6 +1045,7 @@ def main(args):
                             accelerator,
                             weight_dtype,
                             'val',
+                            LPIPS=LPIPS,
                         )
                         if args.use_ema:
                             # Switch back to the original UNet parameters.
@@ -1040,6 +1065,7 @@ def main(args):
                             accelerator,
                             weight_dtype,
                             'train',
+                            LPIPS=LPIPS,
                         )
                         if args.use_ema:
                             # Switch back to the original UNet parameters.

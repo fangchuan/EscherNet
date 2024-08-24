@@ -746,13 +746,13 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                 If `return_dict` is True, an [`~models.unet_2d_condition.UNet2DConditionOutput`] is returned, otherwise
                 a `tuple` is returned where the first element is the sample tensor.
         """
-        logger.info(f"sample shape: {sample.shape}")
+        logger.debug(f"sample shape: {sample.shape}")
         # By default samples have to be AT least a multiple of the overall upsampling factor.
         # The overall upsampling factor is equal to 2 ** (# num of upsampling layers).
         # However, the upsampling interpolation output size can be forced to fit any upsampling size
         # on the fly if necessary.
         default_overall_up_factor = 2**self.num_upsamplers
-        logger.info(f"Default overall upsampling factor: {default_overall_up_factor}")
+        logger.debug(f"Default overall upsampling factor: {default_overall_up_factor}")
 
         # upsample size should be forwarded when sample is not a multiple of `default_overall_up_factor`
         forward_upsample_size = False
@@ -803,9 +803,9 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
 
         # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
         timesteps = timesteps.expand(sample.shape[0])
-        logger.info(f"timesteps shape: {timesteps.shape}")
+        logger.debug(f"timesteps shape: {timesteps.shape}")
         t_emb = self.time_proj(timesteps)
-        logger.info(f"t_emb shape: {t_emb.shape}")
+        logger.debug(f"t_emb shape: {t_emb.shape}")
 
         # `Timesteps` does not contain any weights and will always return f32 tensors
         # but time_embedding might actually be running in fp16. so we need to cast here.
@@ -813,7 +813,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
         t_emb = t_emb.to(dtype=sample.dtype)
 
         emb = self.time_embedding(t_emb, timestep_cond)
-        logger.info(f'time embedding shape: {emb.shape}')
+        logger.debug(f'time embedding shape: {emb.shape}')
         aug_emb = None
 
         if self.class_embedding is not None:
@@ -834,7 +834,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
             else:
                 emb = emb + class_emb
 
-        logger.info(f'addition_embed_type: {self.config.addition_embed_type}')
+        logger.debug(f'addition_embed_type: {self.config.addition_embed_type}')
         if self.config.addition_embed_type == "text":
             aug_emb = self.add_embedding(encoder_hidden_states)
         elif self.config.addition_embed_type == "text_image":
@@ -888,7 +888,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
         if self.time_embed_act is not None:
             emb = self.time_embed_act(emb)
 
-        logger.info(f'encoder_hid_dim_type: {self.config.encoder_hid_dim_type}')
+        logger.debug(f'encoder_hid_dim_type: {self.config.encoder_hid_dim_type}')
         if self.encoder_hid_proj is not None and self.config.encoder_hid_dim_type == "text_proj":
             encoder_hidden_states = self.encoder_hid_proj(encoder_hidden_states)
         elif self.encoder_hid_proj is not None and self.config.encoder_hid_dim_type == "text_image_proj":
@@ -909,10 +909,10 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
             image_embeds = added_cond_kwargs.get("image_embeds")
             encoder_hidden_states = self.encoder_hid_proj(image_embeds)
             
-        logger.info(f'encoder_hidden_states shape: {encoder_hidden_states.shape}')
+        logger.debug(f'encoder_hidden_states shape: {encoder_hidden_states.shape}')
         # 2. pre-process
         sample = self.conv_in(sample)
-        logger.info(f'conv_in output shape: {sample.shape}')
+        logger.debug(f'conv_in output shape: {sample.shape}')
 
         # 3. down
         down_block_res_samples = (sample,)
@@ -931,7 +931,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                 sample, res_samples = downsample_block(hidden_states=sample, temb=emb)
             # default
             down_block_res_samples += res_samples
-            logger.info(f'downsample_block output shape: {sample.shape}')
+            logger.debug(f'downsample_block output shape: {sample.shape}')
             
 
         if down_block_additional_residuals is not None:
@@ -956,7 +956,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                 encoder_attention_mask=encoder_attention_mask,
                 posemb=pose,
             )
-            logger.info(f'mid_block output shape: {sample.shape}')
+            logger.debug(f'mid_block output shape: {sample.shape}')
 
         if mid_block_additional_residual is not None:
             sample = sample + mid_block_additional_residual
@@ -989,17 +989,14 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                 sample = upsample_block(
                     hidden_states=sample, temb=emb, res_hidden_states_tuple=res_samples, upsample_size=upsample_size
                 )
-            logger.info(f'len res_samples: {len(res_samples)}, res_samples[0].shape: {res_samples[0].shape}')
-            logger.info(f'upsample_block output shape: {sample.shape}')
+            logger.debug(f'upsample_block output shape: {sample.shape}')
 
         # 6. post-process
         if self.conv_norm_out:
             sample = self.conv_norm_out(sample)
-            logger.info(f'conv_norm_out output shape: {sample.shape}')
             sample = self.conv_act(sample)
-            logger.info(f'conv_act output shape: {sample.shape}')
         sample = self.conv_out(sample)
-        logger.info(f'conv_out output shape: {sample.shape}')
+        logger.debug(f'conv_out output shape: {sample.shape}')
         if not return_dict:
             return (sample,)
 
