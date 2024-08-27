@@ -314,7 +314,7 @@ class KoolAIPanoData(BaseDataset):
             new_scale_mat[:3, 3] = cam_center
             new_scale_mat[:3] *= new_scene_scale
             # scale pose_c2w
-            pose = scale_mat @ pose
+            pose = new_scale_mat @ pose
             R_c2w = (pose[:3, :3]).numpy()
             q_c2w = trimesh.transformations.quaternion_from_matrix(R_c2w)
             q_c2w = trimesh.transformations.unit_vector(q_c2w)
@@ -336,11 +336,9 @@ class KoolAIPanoData(BaseDataset):
         
         # source views
         input_images: Float[Tensor, "N 3 H W"] = rgbs[:self.T_in]
-        input_images = torch.clamp(input_images, 0, 1)
 
         # atarget views
         target_images: Float[Tensor, "N 3 H W"] = rgbs[self.T_in:]
-        target_images = torch.clamp(target_images, 0, 1)
         
         all_depths: Float[Tensor, "N 1 H W"] = depths
         input_depths: Float[Tensor, "N 1 H W"] = all_depths[:self.T_in]

@@ -158,7 +158,7 @@ def log_validation(validation_dataloader,
                                      output_type="numpy").images
 
                 pred_image = torch.from_numpy(image * 2. - 1.).permute(0, 3, 1, 2)
-                images.append(pred_image)
+                images.append(pred_image/2+0.5)
 
                 pred_np = (image * 255).astype(np.uint8) # [0,1]
                 gt_np = (gt_image / 2 + 0.5).clamp(0, 1)
@@ -181,7 +181,7 @@ def log_validation(validation_dataloader,
                 val_num += 1
 
             image_logs.append(
-                {"gt_image": gt_image, "pred_images": images, "input_image": input_image}
+                {"gt_image": gt_image/2+0.5, "pred_images": images, "input_image": input_image/2+0.5}
             )
 
         pixel_loss = val_loss / val_num
@@ -224,7 +224,8 @@ def log_validation(validation_dataloader,
     # after validation, set the pipeline back to training mode
     unet.train()
     vae.eval()
-    image_encoder.train()
+    # image_encoder.train()
+    image_encoder.eval()
 
     return image_logs
 
@@ -481,7 +482,7 @@ def parse_args(input_args=None):
     parser.add_argument(
         "--num_validation_batches",
         type=int,
-        default=20,
+        default=5,
         help=(
             "Number of batches to use for validation. If `None`, use all batches."
         ),
@@ -539,10 +540,10 @@ def _encode_image(feature_extractor: torch.nn.Module,
     # [-1, 1] -> [0, 1]
     image = (image + 1.) / 2.
     # if isinstance(image_encoder, CN_encoder):
-    image = ConvNextV2_preprocess(image)  
+    # image = ConvNextV2_preprocess(image)  
     image_embeddings = image_encoder(image)   # bt, 768, 37, 74
-    if isinstance(image_encoder, DinoV2):
-        image_embeddings = einops.rearrange(image_embeddings, 'bt c h w -> bt (h w) c')
+    # if isinstance(image_encoder, DinoV2):
+    image_embeddings = einops.rearrange(image_embeddings, 'bt c h w -> bt (h w) c')
     if do_classifier_free_guidance:
         negative_prompt_embeds = torch.zeros_like(image_embeddings)
         image_embeddings = torch.cat([negative_prompt_embeds, image_embeddings])
@@ -595,8 +596,8 @@ def main(args):
 
     # Load scheduler and models
     noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler", revision=args.revision)
-    image_encoder = CN_encoder.from_pretrained(args.convnext_pretrained_model_path)
-    # image_encoder = DinoV2()
+    # image_encoder = CN_encoder.from_pretrained(args.convnext_pretrained_model_path)
+    image_encoder = DinoV2()
     
     feature_extractor = None
     vae = AutoencoderKL.from_pretrained(args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision)
@@ -609,8 +610,8 @@ def main(args):
     vae.eval()
     vae.requires_grad_(False)
 
-    image_encoder.train()
-    image_encoder.requires_grad_(True)
+    image_encoder.eval()
+    image_encoder.requires_grad_(False)
 
     unet.requires_grad_(True)
     unet.train()
@@ -673,8 +674,8 @@ def main(args):
 
 
     optimizer = optimizer_class(
-        [{"params": unet.parameters(), "lr": args.learning_rate},
-         {"params": image_encoder.parameters(), "lr": args.learning_rate}],
+        [{"params": unet.parameters(), "lr": args.learning_rate}],
+        #  {"params": image_encoder.parameters(), "lr": args.learning_rate}],
         betas=(args.adam_beta1, args.adam_beta2),
         weight_decay=args.adam_weight_decay,
         eps=args.adam_epsilon
@@ -743,7 +744,7 @@ def main(args):
         num_workers=1,
         collate_fn=validation_dataset.collate,
     )
-    # # for training set logs
+    # for training set logs
     # train_log_dataloader = torch.utils.data.DataLoader(
     #     train_log_dataset,
     #     shuffle=False,
@@ -861,7 +862,8 @@ def main(args):
         loss_epoch = 0.0
         num_train_elems = 0
         for step, batch in enumerate(train_dataloader):
-            with accelerator.accumulate(unet, image_encoder):
+            # with accelerator.accumulate(unet, image_encoder):
+            with accelerator.accumulate(unet):
                 gt_image = batch["image_target"].to(dtype=weight_dtype) # BxTx3xHxW
                 gt_image = einops.rearrange(gt_image, 'b t c h w -> (b t) c h w', t=T_out)
                 input_image = batch["image_input"].to(dtype=weight_dtype)    # Bx3xHxW
@@ -934,7 +936,8 @@ def main(args):
 
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
-                    params_to_clip = itertools.chain(unet.parameters(), image_encoder.parameters())
+                    # params_to_clip = itertools.chain(unet.parameters(), image_encoder.parameters())
+                    params_to_clip = itertools.chain(unet.parameters())
                     accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
                 optimizer.step()
                 # cosine
@@ -1030,7 +1033,7 @@ def main(args):
                             # Switch back to the original UNet parameters.
                             ema_unet.restore(unet.parameters())
 
-                    if validation_dataloader is not None and (global_step % args.validation_steps == 0 or global_step == 1):
+                    if validation_dataloader is not None and (global_step % args.validation_steps == 1):
                         if args.use_ema:
                             # Store the UNet parameters temporarily and load the EMA parameters to perform inference.
                             ema_unet.store(unet.parameters())
@@ -1050,7 +1053,7 @@ def main(args):
                         if args.use_ema:
                             # Switch back to the original UNet parameters.
                             ema_unet.restore(unet.parameters())
-                    if train_log_dataloader is not None and (global_step % args.validation_steps == 0 or global_step == 1):
+                    if train_log_dataloader is not None and (global_step % args.validation_steps == 0):
                         if args.use_ema:
                             # Store the UNet parameters temporarily and load the EMA parameters to perform inference.
                             ema_unet.store(unet.parameters())

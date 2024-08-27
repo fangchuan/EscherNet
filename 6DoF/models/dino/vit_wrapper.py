@@ -48,6 +48,11 @@ class ViTWrapper(nn.Module):
     def last_layer_index(self) -> int:
         return self.num_blocks - 1
 
+    # AttributeError: 'ViTWrapper' object has no attribute 'dtype'. Did you mean: 'type'?
+    @property
+    def dtype(self) -> torch.dtype:
+        return self.model.patch_embed.proj.weight.dtype
+
     def create_model(
         self,
         model_type: str,
@@ -105,6 +110,7 @@ class ViTWrapper(nn.Module):
                 model_type,
                 pretrained=True,
                 num_classes=num_classes,
+                checkpoint_path='/mnt/nas_3dv/hdd1/datasets/fangchuan/.cache/huggingface/hub/models--timm--vit_base_patch14_dinov2.lvd142m/snapshots/6bcdb58ed0e82e413c98f5ad3894942afd52eed3/model.safetensors',
                 dynamic_img_size=self.dynamic_img_size,
                 dynamic_img_pad=self.dynamic_img_pad,
                 **kwargs,
@@ -115,6 +121,7 @@ class ViTWrapper(nn.Module):
                 model_type,
                 pretrained=True,
                 num_classes=num_classes,
+                checkpoint_path='/mnt/nas_3dv/hdd1/datasets/fangchuan/.cache/huggingface/hub/models--timm--vit_base_patch14_dinov2.lvd142m/snapshots/6bcdb58ed0e82e413c98f5ad3894942afd52eed3/model.safetensors',
                 **kwargs,
             )
         data_config = timm.data.resolve_model_data_config(model)

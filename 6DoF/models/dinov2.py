@@ -14,7 +14,7 @@ from models.dino.vit_wrapper import ViTWrapper
 class DinoV2(nn.Module):
     @dataclass
     class Config:
-        img_size: List[int] = field(default_factory=lambda : [512, 1024])
+        img_size: List[int] = field(default_factory=lambda : [256, 512])
         model_type: str = "vit_base_patch14_dinov2.lvd142m"
         stride: int = 14
         patch_size: int = 14
@@ -43,6 +43,7 @@ class DinoV2(nn.Module):
         # ic('last layer feature dim:', feature_dim)
         # ic('last layer index:', self.query_layer_index)
         # ic('num_blocks:', num_blocks)
+        self.dtype = self.model.dtype
         
         new_height = int(math.ceil(image_height / self.cfg.stride) * self.cfg.stride)
         new_width = int(math.ceil(image_width / self.cfg.stride) * self.cfg.stride)

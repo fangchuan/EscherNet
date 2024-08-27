@@ -9,14 +9,15 @@ accelerate launch --config_file ../configs/accelerate-train.yaml \
             train_eschernet_koolai.py --train_data_dir /mnt/nas_3dv/hdd1/datasets/datasets/KoolAI/processed_data_20240413/ \
             --train_split_file /mnt/nas_3dv/hdd1/datasets/datasets/KoolAI/processed_data_20240413/train.txt \
             --pretrained_model_name_or_path $SD_15_PRETEAINED_FOLDER \
-            --train_batch_size 18 \
+            --train_batch_size 20 \
             --dataloader_num_workers 8 \
             --mixed_precision bf16 \
             --gradient_checkpointing \
             --T_in 3 \
             --T_out 3 \
             --T_in_val 3 \
-            --output_dir logs_pano_eschernet_6dof \
+            --output_dir logs_pano_eschernet_6dof_dino \
+            --resume_from_checkpoint latest \
             --checkpoints_total_limit 10 \
             --convnext_pretrained_model_path $CONVNEXT_PRETRRAINED_FOLDER \
             --alexnet_pretrained_model_path $ALEXNET_PRETRAINED_MODEL_PATH

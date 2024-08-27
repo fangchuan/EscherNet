@@ -533,7 +533,9 @@ class Zero1to3StableDiffusionPipeline(DiffusionPipeline):
             image = self.ConvNextV2_preprocess(image)
         print(f'image shape: {image.shape}')
         image_embeddings = self.image_encoder(image)#.last_hidden_state  # bt, 768, 12, 12
-        print(f'image_embeddings from ConvNextV2 : {image_embeddings.shape}')
+        if isinstance(self.image_encoder, DinoV2):
+            image_embeddings = einops.rearrange(image_embeddings, 'bt c h w -> bt (h w) c')
+        print(f'image_embeddings from DinoV2 : {image_embeddings.shape}')
         # image_embeddings = einops.rearrange(image_embeddings, 'b c h w -> b (h w) c')
         # image_embeddings = self.CN_layernorm(image_embeddings)   # todo
 
