@@ -11,7 +11,6 @@ from CN_encoder import CN_encoder
 from models.dinov2 import DinoV2
 # todo import convnext
 from torchvision import transforms
-
 import einops
 
 # from ...configuration_utils import FrozenDict
@@ -44,7 +43,8 @@ from diffusers.utils import logging
 from diffusers.configuration_utils import FrozenDict
 import PIL
 import numpy as np
-import kornia
+# disable kornia since it's useless
+# import kornia 
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.models.modeling_utils import ModelMixin
 
@@ -465,20 +465,20 @@ class Zero1to3StableDiffusionPipeline(DiffusionPipeline):
 
         return prompt_embeds
 
-    def CLIP_preprocess(self, x):
-        dtype = x.dtype
-        # following openai's implementation
-        # TODO HF OpenAI CLIP preprocessing issue https://github.com/huggingface/transformers/issues/22505#issuecomment-1650170741
-        # follow openai preprocessing to keep exact same, input tensor [-1, 1], otherwise the preprocessing will be different, https://github.com/huggingface/transformers/pull/22608
-        if isinstance(x, torch.Tensor):
-            if x.min() < -1.0 or x.max() > 1.0:
-                raise ValueError("Expected input tensor to have values in the range [-1, 1]")
-        x = kornia.geometry.resize(x.to(torch.float32), (224, 224), interpolation='bicubic', align_corners=True, antialias=False).to(dtype=dtype)
-        x = (x + 1.) / 2.
-        # renormalize according to clip
-        x = kornia.enhance.normalize(x, torch.Tensor([0.48145466, 0.4578275, 0.40821073]),
-                                     torch.Tensor([0.26862954, 0.26130258, 0.27577711]))
-        return x
+    # def CLIP_preprocess(self, x):
+    #     dtype = x.dtype
+    #     # following openai's implementation
+    #     # TODO HF OpenAI CLIP preprocessing issue https://github.com/huggingface/transformers/issues/22505#issuecomment-1650170741
+    #     # follow openai preprocessing to keep exact same, input tensor [-1, 1], otherwise the preprocessing will be different, https://github.com/huggingface/transformers/pull/22608
+    #     if isinstance(x, torch.Tensor):
+    #         if x.min() < -1.0 or x.max() > 1.0:
+    #             raise ValueError("Expected input tensor to have values in the range [-1, 1]")
+    #     x = kornia.geometry.resize(x.to(torch.float32), (224, 224), interpolation='bicubic', align_corners=True, antialias=False).to(dtype=dtype)
+    #     x = (x + 1.) / 2.
+    #     # renormalize according to clip
+    #     x = kornia.enhance.normalize(x, torch.Tensor([0.48145466, 0.4578275, 0.40821073]),
+    #                                  torch.Tensor([0.26862954, 0.26130258, 0.27577711]))
+    #     return x
 
 
 

@@ -108,9 +108,9 @@ class ViTWrapper(nn.Module):
         try:
             model = timm.create_model(
                 model_type,
-                pretrained=True,
+                pretrained=False,
                 num_classes=num_classes,
-                checkpoint_path='/mnt/nas_3dv/hdd1/datasets/fangchuan/.cache/huggingface/hub/models--timm--vit_base_patch14_dinov2.lvd142m/snapshots/6bcdb58ed0e82e413c98f5ad3894942afd52eed3/model.safetensors',
+                checkpoint_path='/seaweedfs/training/experiments/zhenqing/cache/timm--vit_base_patch14_dinov2.lvd142m/model.safetensors',
                 dynamic_img_size=self.dynamic_img_size,
                 dynamic_img_pad=self.dynamic_img_pad,
                 **kwargs,
@@ -119,9 +119,9 @@ class ViTWrapper(nn.Module):
             # some model do not support dynamic_img_size and dynamic_img_pad
             model = timm.create_model(
                 model_type,
-                pretrained=True,
+                pretrained=False,
                 num_classes=num_classes,
-                checkpoint_path='/mnt/nas_3dv/hdd1/datasets/fangchuan/.cache/huggingface/hub/models--timm--vit_base_patch14_dinov2.lvd142m/snapshots/6bcdb58ed0e82e413c98f5ad3894942afd52eed3/model.safetensors',
+                checkpoint_path='/seaweedfs/training/experiments/zhenqing/cache/timm--vit_base_patch14_dinov2.lvd142m/model.safetensors',
                 **kwargs,
             )
         data_config = timm.data.resolve_model_data_config(model)

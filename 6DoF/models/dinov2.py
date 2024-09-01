@@ -31,12 +31,12 @@ class DinoV2(nn.Module):
     """
     def configure(self) -> None:
         self.cfg = OmegaConf.structured(self.Config)
-        self.device = get_device()
+        # self.device = get_device()
 
         image_height, image_width = self.cfg.img_size
         
         self.model = ViTWrapper(model_type=self.cfg.model_type, stride=self.cfg.stride)
-        self.model = self.model.to(self.device).eval()
+        # self.model = self.model.to(self.device).eval()
         feature_dim = self.model.n_output_dims
         self.query_layer_index = int(self.model.last_layer_index)
         num_blocks = int(self.model.num_blocks)

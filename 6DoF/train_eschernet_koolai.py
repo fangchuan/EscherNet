@@ -49,8 +49,10 @@ from diffusers import (
     DDPMScheduler,
     # UNet2DConditionModel,
 )
+
 from unet_2d_condition import UNet2DConditionModel
 from pipeline_zero1to3 import Zero1to3StableDiffusionPipeline
+
 from diffusers.optimization import get_scheduler
 from diffusers.utils import is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
@@ -216,6 +218,7 @@ def log_validation(validation_dataloader,
                              "{}_T{}_lpips".format(split, T_in_val): pixel_lpips,
                              "{}_T{}_ssim".format(split, T_in_val): pixel_ssim,
                              "{}_T{}_psnr".format(split, T_in_val): pixel_psnr})
+                # tracker.log_images
             else:
                 logger.warn(f"image logging not implemented for {tracker.name}")
 
@@ -500,14 +503,14 @@ def parse_args(input_args=None):
         "--convnext_pretrained_model_path",
         type=str,
         default="facebook/convnextv2-tiny-22k-224",
-        required=True,
+        # required=True,
         help="Path to pretrained model or model identifier from huggingface.co/models.",
     )
     parser.add_argument(
         '--alexnet_pretrained_model_path',
         type=str,
         default='',
-        required=True,
+        # required=True,
         help="Path to pretrained model or model identifier from huggingface.co/models.",
     )
 

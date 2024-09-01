@@ -300,7 +300,7 @@ class KoolAIPanoData(BaseDataset):
         # c2w poses, rgbs, background colors
         poses, rgbs = [], []
         depths = []
-        new_scene_scale = 1.0 / 10.16777
+        new_scene_scale = 1.0 / 14.319899559020996
         
         for view in sample_views:
             rgb_path = osp.join(rgb_dir, f'{view}.png')
@@ -370,18 +370,319 @@ class KoolAIPanoData(BaseDataset):
             float: largest depth value
         """
         uid = self.room_ids[idx]        
-        depth_dir = os.path.join(self.root_dir, uid, 'depth')
+        # depth_dir = os.path.join(self.root_dir, uid, 'depth')
         
-        depth_image_files = [f for f in os.listdir(depth_dir) if f.endswith('.png')]
-        depth_image_files.sort(key=lambda x: int(x.split('.')[0]))
+        # depth_image_files = [f for f in os.listdir(depth_dir) if f.endswith('.png')]
+        # depth_image_files.sort(key=lambda x: int(x.split('.')[0]))
         
-        max_depth = 0
-        for f in depth_image_files:
-            depth_path = osp.join(depth_dir, f)
-            depth = self._load_depth_image(depth_path, scale=4000.0)
-            max_depth = max(max_depth, torch.max(depth).item())
+        # max_depth = 0
+        # for f in depth_image_files:
+        #     depth_path = osp.join(depth_dir, f)
+        #     depth = self._load_depth_image(depth_path, scale=4000.0)
+        #     max_depth = max(max_depth, torch.max(depth).item())
         
-        return max_depth * 1.05
+        # return max_depth * 1.05
+
+        # load roomlayout mesh
+        roomlayout_mesh_file = osp.join(self.root_dir, uid, 'room_wall.ply')
+        toomlayout_mesh = trimesh.load(roomlayout_mesh_file)
+        layout_bbox_size = toomlayout_mesh.bounding_box_oriented.extents
+        # ic(uid, layout_bbox_size)
+        return max(layout_bbox_size) * 1.05
+    
+    def compute_all_room_scale(self) -> List[float]:
+        scales = []
+        for idx in range(len(self.room_ids)):
+            room_uid = self.room_ids[idx]
+            scale = self.compute_room_scale(idx)
+            ic(room_uid, scale)
+            scales.append(scale)
+        
+        # max_scale = max(scales)
+        max_scale = np.quantile(np.array(scales), 0.95)
+        return 1./max_scale
+    
+    def collate(self, batch):
+        batch = torch.utils.data.default_collate(batch)
+        batch.update({"height": self.image_height, "width": self.image_width})
+        return batch
+    
+class KoolAIPersData(BaseDataset):
+    def __init__(self,
+                 root_dir: str = '.koolai/test_data/',
+                 split_filepath: str = 'perspective_train.txt',
+                 image_height: int = 256, 
+                 image_width: int = 256,
+                 total_view: int= 16,
+                 validation: bool=False,
+                 T_in: int=8,
+                 T_out: int=8,
+                 fix_sample: bool=False,
+                 identical_output: bool=False,
+                 ) -> None:
+        """Create a dataset from KoolAI dataset.
+        dataset structure:
+        root_dir:
+            --scene_id_1:
+                --perspective:
+                    --room_id:
+                        --mvp_rgb:      # mvp means multi-view perspective, 8 perspective images make a panorama
+                            --0_0.png   # 0_0.png means 0 degree azimuth
+                            --0_45.png  # 0_045.png means 45 degree azimuth
+                            --0_90.png
+                            --0_135.png
+                            --0_180.png
+                            --0_225.png
+                            --0_270.png
+                            --0_315.png
+                            ...
+                        --mvp_depth:
+                            --0_0.png
+                            --0_45.png
+                            --0_90.png
+                            --0_135.png
+                            --0_180.png
+                            --0_225.png
+                            --0_270.png
+                            --0_315.png
+                            ...
+                        room_meta.json
+                        
+            --scene_id_2:
+                
+        """
+        
+        super().__init__(root_dir, split_filepath)
+        
+        self.root_dir = Path(root_dir)
+        self.num_sample_views = total_view
+        self.T_in = T_in
+        self.T_out = T_out
+        self.fix_sample = fix_sample
+        self.identical_output = identical_output
+        self.image_height = image_height
+        self.image_width = image_width
+
+        # total images
+        num_rooms = len(self.room_ids)
+     
+        if validation:
+            self.room_ids = self.room_ids[math.floor(num_rooms / 100. * 99.):]  # used last 0.1% as validation
+        else:
+            self.room_ids = self.room_ids[:math.floor(num_rooms / 100. * 99.)]  # used first 99.9% as training
+        print('============= length of dataset %d =============' % len(self.room_ids))
+        
+        room_folders = [osp.join(root_dir, f) for f in self.room_ids if os.path.isdir(osp.join(root_dir, f))]
+        num_cams = sum([len([f for f in os.listdir(os.path.join(room_folder, 'mvp_rgb')) if f.endswith('.png')]) for room_folder in room_folders])
+
+        self.num_all_rooms = len(self.room_ids)
+        self.num_all_views = num_cams
+        ic(self.num_all_rooms, self.num_all_views)
+        
+    @staticmethod
+    def _load_room_meta(file_path: str) -> Dict:
+        with open(file_path, 'r') as f:
+            room_meta = json.load(f)
+        return room_meta
+    
+    @staticmethod
+    def _load_camera_meta(file_path) -> Dict:
+        room_meta = KoolAIPersData()._load_room_meta(file_path)
+        cam_meta = room_meta['cameras']
+        return cam_meta
+    
+    @staticmethod
+    def _load_camera_pose(camera_meta_dict: Dict, idx: int) -> torch.Tensor:
+        """ load c2w pose from camera meta
+
+        Args:
+            camera_meta_dict (Dict): camera meta json
+            idx (int): camera idx
+
+        Returns:
+            torch.Tensor: pose
+        """
+        cam_meta = camera_meta_dict[str(idx)]
+        
+        # w2c pose
+        pose = np.array(cam_meta['camera_transform']).reshape(4, 4)
+        c2w_pose = np.linalg.inv(pose)
+        c2w_pose = torch.from_numpy(c2w_pose).float()
+        return c2w_pose
+    
+    @staticmethod
+    def _load_scale_mat(file_path: str) -> Tuple[Float[Tensor, "4 4"], float]:
+        room_meta = KoolAIPersData()._load_room_meta(file_path)
+        
+        scale_mat = np.array(room_meta['scale_mat']).reshape(4, 4)
+        scale = float(room_meta['scale'])
+        
+        return torch.from_numpy(scale_mat).float(), scale
+    
+    def convert_distance_to_z(self, distance_map: Float[Tensor, "1 1 H W"], 
+                              focal_length: float = 1.0) -> Float[Tensor, "1 1 H W"]:
+        """
+        Convert distance map to depth map
+        params:
+            distance_map: [1, 1, H, W]
+            focal_length: noormlized focal length
+        """
+        
+        vs, us = torch.meshgrid(torch.linspace(-1, 1, self.image_height), torch.linspace(-1, 1, self.image_width), indexing='ij')
+        us = us.reshape(1, 1, self.image_height, self.image_width)
+        vs = vs.reshape(1, 1, self.image_height, self.image_width)    
+        depth_cos = torch.cos(torch.atan2(torch.sqrt(us*us + vs*vs), torch.tensor(focal_length)))
+        depth = distance_map * depth_cos
+        
+        return depth
+                
+    def inner_get_item(self, idx):
+        """
+        Loaded contents:
+            rgbs: [M, 3, H, W]
+            poses: [M, 3, 4], [R|t]
+        """
+        uid = self.room_ids[idx]
+        room_index = idx
+        
+        rgb_dir = os.path.join(self.root_dir, uid, 'mvp_rgb')
+        depth_dir = os.path.join(self.root_dir, uid, 'mvp_depth')
+        room_meta_filepath = os.path.join(self.root_dir, uid, 'room_meta.json')
+        
+        # load camera poses
+        room_meta = self._load_room_meta(room_meta_filepath)
+        cameras_meta = room_meta['cameras']
+        # scale matrix and scale factor w.r.t the single room, deprecated
+        scale_mat = torch.from_numpy(np.array(room_meta['scale_mat']).reshape(4, 4)).float()
+        original_scale = float(room_meta['scale'])
+        # new scale, w.r.t the whole dataset
+        # new_scene_scale = 1.0 / 14.319899559020996
+        # transform ENU to CV coordinate
+        T_enu_cv = np.array(room_meta['T_enu_cv']).reshape(4, 4)
+        T_cv_enu = torch.inverse(torch.from_numpy(T_enu_cv).float())
+        # sample views (incl. source view and side views)
+        num_total_persp_views = len([img for img in os.listdir(rgb_dir) if img.endswith('.png')])
+        if num_total_persp_views < self.num_sample_views:
+            ic(f"Warning: {uid} has less than {self.num_sample_views} views, set to {num_total_persp_views} views")
+            self.num_sample_views = num_total_persp_views
+        assert num_total_persp_views >= self.T_in + self.T_out, f"Error: {uid} has less than {self.T_in + self.T_out} views"
+        assert num_total_persp_views % 8 == 0 and self.num_sample_views % 8 == 0, f"Error: {uid} has {num_total_persp_views} views, not a multiple of 8"
+        
+        num_sample_pano_views = int(self.num_sample_views / 8)
+        num_total_pano_views = int(num_total_persp_views / 8)
+        num_input_pano_views = int(self.T_in / 8)
+        num_target_pano_views = int(self.T_out / 8)
+        
+        if self.fix_sample:
+            if self.identical_output:
+                indexes = range(num_sample_pano_views)
+                index_targets = list(indexes[:num_target_pano_views])
+                index_inputs = index_targets   # identical input and output
+                sample_views = index_inputs + index_targets
+            else:
+                indexes = range(num_sample_pano_views)
+                index_inputs = list(indexes[:num_input_pano_views]) # one overlap identity        
+                index_targets = list(indexes[num_input_pano_views:num_input_pano_views + num_target_pano_views])
+                sample_views = index_inputs + index_targets
+        else:
+            sample_views = np.random.choice(range(num_total_pano_views), (num_input_pano_views + num_target_pano_views), replace=False)        
+            index_inputs = sample_views[:num_input_pano_views]
+            index_targets = sample_views[num_input_pano_views:]
+                
+        # ic(uid, sample_views)
+        # c2w poses, rgbs, background colors
+        poses, rgbs = [], []
+        depths = []
+        new_scene_scale = 1.0 / 7.609875202178955
+        
+        for view in sample_views:
+            pose = self._load_camera_pose(cameras_meta, view)
+            
+            # new scale_mat
+            cam_center = scale_mat[:3, 3] / original_scale
+            new_scale_mat = torch.eye(4).float()
+            new_scale_mat[:3, 3] = cam_center
+            new_scale_mat[:3] *= new_scene_scale
+
+            for i in range(8):
+                subview_fname = f'{view}_{i*45}.png'
+                rgb_path = osp.join(rgb_dir, subview_fname)
+                depth_path = osp.join(depth_dir, subview_fname)
+                rgb = self._load_rgb_image(rgb_path)
+                distance = self._load_depth_image(depth_path, scale=4000.0)
+
+                # convert distance map to depth map
+                depth = self.convert_distance_to_z(distance_map=distance)
+                
+                subview_pose = torch.eye(4).float()
+                rot_angle = torch.tensor([i * 45.0 / 180.0 * math.pi])
+                subview_pose[:3, :3] = torch.tensor([[torch.cos(rot_angle), 0, torch.sin(rot_angle)],
+                                        [ 0, 1, 0], 
+                                        [-torch.sin(rot_angle), 0, torch.cos(rot_angle)]])
+                subview_pose =  pose @ T_cv_enu @ subview_pose
+                # scale pose_c2w
+                subview_pose = new_scale_mat @ subview_pose
+                R_c2w = (subview_pose[:3, :3]).numpy()
+                q_c2w = trimesh.transformations.quaternion_from_matrix(R_c2w)
+                q_c2w = trimesh.transformations.unit_vector(q_c2w)
+                R_c2w = trimesh.transformations.quaternion_matrix(q_c2w)[:3, :3]
+                subview_pose[:3, :3] = torch.from_numpy(R_c2w)
+                
+                # scale rgb to [-1, 1]
+                normalized_rgb = rgb * 2.0 - 1.0
+                poses.append(subview_pose)
+                rgbs.append(normalized_rgb)
+                depths.append(depth)
+            
+        poses: Float[Tensor, "N 4 4"] = torch.stack(poses, dim=0)
+        rgbs: Float[Tensor, "N 3 H W"] = torch.cat(rgbs, dim=0)
+        depths: Float[Tensor, "N 1 H W"] = torch.cat(depths, dim=0)
+        
+        # scale depth according to scale
+        depths = depths * new_scene_scale
+        
+        # source views
+        input_images: Float[Tensor, "N 3 H W"] = rgbs[:self.T_in]
+
+        # atarget views
+        target_images: Float[Tensor, "N 3 H W"] = rgbs[self.T_in:]
+        
+        all_depths: Float[Tensor, "N 1 H W"] = depths
+        input_depths: Float[Tensor, "N 1 H W"] = all_depths[:self.T_in]
+        target_depths: Float[Tensor, "N 1 H W"] = all_depths[self.T_in:]
+        
+        cond_Ts: Float[Tensor, "N 4 4"] = poses[:self.T_in]
+        target_Ts: Float[Tensor, "N 4 4"] = poses[self.T_in:]
+                
+        data = {}
+        data['room_uid'] = uid
+        data['image_input'] = input_images
+        data['image_target'] = target_images
+        data['depth_input'] = input_depths
+        data['depth_target'] = target_depths
+        data['pose_out'] = target_Ts
+        data['pose_out_inv'] = torch.inverse(target_Ts).permute(0, 2, 1)
+        data['pose_in'] = cond_Ts
+        data['pose_in_inv'] = torch.inverse(cond_Ts).permute(0, 2, 1)
+        
+        return data
+        
+    def compute_room_scale(self, idx:int) -> float:
+        """ traverse all depth images and compute the scale of the room
+
+        Args:
+            room_id (int): room id
+
+        Returns:
+            float: largest depth value
+        """
+        uid = self.room_ids[idx]        
+        # load roomlayout mesh
+        roomlayout_mesh_file = osp.join(self.root_dir, uid, 'room_wall.ply')
+        toomlayout_mesh = trimesh.load(roomlayout_mesh_file)
+        layout_bbox_size = toomlayout_mesh.bounding_box_oriented.extents
+        # ic(uid, layout_bbox_size)
+        return max(layout_bbox_size) * 1.05
     
     def compute_all_room_scale(self) -> List[float]:
         scales = []

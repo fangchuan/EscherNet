@@ -1,4 +1,5 @@
 import torch
+import open3d as o3d
 from utils.typing import *
 
 
@@ -132,3 +133,41 @@ def project_points(points: torch.Tensor, extrinsic: torch.Tensor):
     points = torch.bmm(extrinsic, points.permute(0, 2, 1)).permute(0, 2, 1)
     points = points[:,:,:3] / points[:, :, 3:]
     return points
+
+def cvt_to_perspective_pointcloud(rgb_image: torch.Tensor,
+                                  depth_image: torch.Tensor, 
+                                  depth_scale: float = 1.0,
+                                  hfov_rad: float = 0.5*np.pi,
+                                  wfov_rad: float = 0.5*np.pi,):
+    """
+    rgb: (3, H, W)
+    depth: (1, H, W)
+    
+    """
+    C, H, W = depth_image.shape
+    K = torch.tensor([
+                [1 / np.tan(wfov_rad / 2.), 0., 0., 0.],
+                [0., 1 / np.tan(hfov_rad / 2.), 0., 0.],
+                [0., 0.,  1, 0],
+                [0., 0., 0, 1]]).float().to(depth_image.device)
+
+    # Now get an approximation for the true world coordinates -- see if they make sense
+    # [-1, 1] for x and [-1, -1] for y as array indexing is y-down
+    ys, xs = torch.meshgrid(torch.linspace(-1,1,H), torch.linspace(-1,1,W), indexing='ij')
+    xs = xs.reshape(1,H,W).to(depth_image.device)
+    ys = ys.reshape(1,H,W).to(depth_image.device)
+
+    # Unproject
+    # positive depth as the camera looks along Z
+    depth = depth_image / depth_scale
+    xys = torch.cat([xs * depth , ys * depth, depth, torch.ones_like(depth)], dim=0)
+    xys = xys.reshape(4, -1)
+    points = torch.inverse(K) @ xys
+    
+    o3d_pointcloud = o3d.geometry.PointCloud()
+    colors = rgb_image.permute(1, 2, 0).reshape(-1, 3).cpu().numpy()
+    colors = np.clip(colors, 0, 1.0)
+    points = points.permute(1, 0).cpu().numpy()[:, :3]
+    o3d_pointcloud.points = o3d.utility.Vector3dVector(points)
+    o3d_pointcloud.colors = o3d.utility.Vector3dVector(colors)
+    return o3d_pointcloud
